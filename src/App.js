@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-const API_URL = "http://localhost:5000/api/costing";
+const API_URL = "https://regen-costing.onrender.com";
 
 const SUPPORTED_KW = [500, 1000, 1500, 2000, 2500, 3000, 4500, 6000];
 const DEFAULT_BLOWER_HP = { 500:10, 1000:10, 1500:15, 2000:20, 2500:25, 3000:25, 4500:40, 6000:60 };
@@ -56,7 +56,7 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(API_URL, {
+      const response = await fetch(`${API_URL}/api/costing`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
