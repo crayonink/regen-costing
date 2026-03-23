@@ -1,9 +1,9 @@
 """
-REGEN Burner - Google Sheets Integration (OAuth Version)
-Creates a new Google Sheet in the logged-in user's Google Drive.
+REGEN Burner - Google Sheets Integration (OAuth Version - Render Safe)
 """
 
 import os
+import json
 import pickle
 from datetime import datetime
 
@@ -16,7 +16,6 @@ SCOPES = [
 ]
 
 TOKEN_FILE = "token.pickle"
-CREDS_FILE = os.path.join(os.path.dirname(__file__), "oauth_credentials.json")
 
 SECTIONS = [
     "Burner & Pilot", "Gas Line - Pilot", "Gas Line - Burner",
@@ -26,22 +25,38 @@ SECTIONS = [
 
 
 # ─────────────────────────────────────────────────────────────
-# AUTH (OAuth)
+# AUTH (OAuth) — UPDATED
 # ─────────────────────────────────────────────────────────────
 def get_service():
     creds = None
 
+    # Load token if exists
     if os.path.exists(TOKEN_FILE):
         with open(TOKEN_FILE, "rb") as token:
             creds = pickle.load(token)
 
+    # If no creds → load from ENV instead of file
     if not creds:
+        creds_json = os.environ.get("OAUTH_CREDENTIALS")
+
+        if not creds_json:
+            raise Exception("OAUTH_CREDENTIALS not set in environment")
+
+        creds_dict = json.loads(creds_json)
+
+        # Write temp credentials file (required by Google library)
+        temp_creds_path = "temp_oauth.json"
+        with open(temp_creds_path, "w") as f:
+            json.dump(creds_dict, f)
+
         flow = InstalledAppFlow.from_client_secrets_file(
-            CREDS_FILE,
+            temp_creds_path,
             SCOPES
         )
+
         creds = flow.run_console()
 
+        # Save token for reuse
         with open(TOKEN_FILE, "wb") as token:
             pickle.dump(creds, token)
 
@@ -54,12 +69,10 @@ def get_service():
 def create_costing_sheet(company_name, project, inputs, summary, items):
     service = get_service()
 
-    # Title
     date_str = datetime.now().strftime("%d %b %Y")
     kw = inputs["kw"]
     title = f"REGEN {kw}KW - {company_name} - {date_str}"
 
-    # Create sheet
     spreadsheet = service.spreadsheets().create(
         body={"properties": {"title": title}},
         fields="spreadsheetId"
@@ -67,7 +80,6 @@ def create_costing_sheet(company_name, project, inputs, summary, items):
 
     spreadsheet_id = spreadsheet.get("spreadsheetId")
 
-    # ── Build rows ───────────────────────────────────────────
     rows = []
 
     rows.append([f"REGEN BURNER {kw} KW — COST SHEET"])
@@ -112,108 +124,14 @@ def create_costing_sheet(company_name, project, inputs, summary, items):
     if pipeline > 0:
         rows.append(["", "Pipeline Cost Extra", "", "", "", "", "", pipeline])
 
-    grand_row = len(rows) + 1
-
     rows.append(["", "GRAND TOTAL (Rounded)", "", "", "", "", "", summary["grand_total"]])
     rows.append(["", f"≈ Rs. {summary['grand_total_lakhs']} Lakhs", "", "", "", "", "", ""])
 
-    # ── Write data ───────────────────────────────────────────
     service.spreadsheets().values().update(
         spreadsheetId=spreadsheet_id,
         range="Sheet1!A1",
         valueInputOption="RAW",
         body={"values": rows}
-    ).execute()
-
-    # ── Formatting ───────────────────────────────────────────
-    requests = []
-
-    # Title formatting
-    requests.append({
-        "repeatCell": {
-            "range": {"sheetId": 0, "startRowIndex": 0, "endRowIndex": 1},
-            "cell": {
-                "userEnteredFormat": {
-                    "textFormat": {"bold": True, "fontSize": 16}
-                }
-            },
-            "fields": "userEnteredFormat.textFormat"
-        }
-    })
-
-    # Header formatting
-    requests.append({
-        "repeatCell": {
-            "range": {
-                "sheetId": 0,
-                "startRowIndex": header_row - 1,
-                "endRowIndex": header_row
-            },
-            "cell": {
-                "userEnteredFormat": {
-                    "textFormat": {"bold": True},
-                    "horizontalAlignment": "CENTER"
-                }
-            },
-            "fields": "userEnteredFormat(textFormat,horizontalAlignment)"
-        }
-    })
-
-    # Column widths
-    col_widths = [40, 280, 80, 60, 130, 140, 130, 140, 160]
-
-    for i, width in enumerate(col_widths):
-        requests.append({
-            "updateDimensionProperties": {
-                "range": {
-                    "sheetId": 0,
-                    "dimension": "COLUMNS",
-                    "startIndex": i,
-                    "endIndex": i + 1
-                },
-                "properties": {"pixelSize": width},
-                "fields": "pixelSize"
-            }
-        })
-
-    # Freeze header
-    requests.append({
-        "updateSheetProperties": {
-            "properties": {
-                "sheetId": 0,
-                "gridProperties": {"frozenRowCount": header_row}
-            },
-            "fields": "gridProperties.frozenRowCount"
-        }
-    })
-
-    # Number formatting
-    for col_idx in [4, 5, 6, 7]:
-        requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": 0,
-                    "startRowIndex": item_start_row - 1,
-                    "endRowIndex": item_end_row + 4,
-                    "startColumnIndex": col_idx,
-                    "endColumnIndex": col_idx + 1
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "numberFormat": {
-                            "type": "NUMBER",
-                            "pattern": "#,##0"
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat.numberFormat"
-            }
-        })
-
-    # Apply formatting
-    service.spreadsheets().batchUpdate(
-        spreadsheetId=spreadsheet_id,
-        body={"requests": requests}
     ).execute()
 
     return {
