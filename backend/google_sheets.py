@@ -33,13 +33,17 @@ def get_service():
 
     # 1. Try loading token from env variable (Railway production)
     token_b64 = os.environ.get("TOKEN_PICKLE_B64")
+
+    print("DEBUG: TOKEN_PICKLE_B64 exists:", bool(token_b64))
+
     if token_b64:
         try:
-            creds = pickle.loads(base64.b64decode(token_b64))
+            decoded = base64.b64decode(token_b64)
+            creds = pickle.loads(decoded)
             print("✓ Loaded credentials from TOKEN_PICKLE_B64 env var")
         except Exception as e:
-            print(f"✗ Failed to load TOKEN_PICKLE_B64: {e}")
-            creds = None
+            print(f"✗ Failed to decode TOKEN_PICKLE_B64: {e}")
+            raise Exception(f"TOKEN_PICKLE_B64 decode failed: {e}")
 
     # 2. Fallback to local token.pickle file (local development)
     if not creds and os.path.exists(TOKEN_FILE):
@@ -49,9 +53,9 @@ def get_service():
             print("✓ Loaded credentials from token.pickle file")
         except Exception as e:
             print(f"✗ Failed to load token.pickle: {e}")
-            creds = None
+            raise Exception(f"token.pickle load failed: {e}")
 
-    # 3. No credentials found — raise clear error
+    # 3. No credentials found — fail clearly
     if not creds:
         raise Exception(
             "No valid credentials found. "
