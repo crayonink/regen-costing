@@ -3,12 +3,10 @@ REGEN Burner - Google Sheets Integration (OAuth Version - Railway Safe)
 """
 
 import os
-import json
 import pickle
 import base64
 from datetime import datetime
 
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 SCOPES = [
@@ -29,6 +27,8 @@ SECTIONS = [
 # AUTH (OAuth) — RAILWAY SAFE
 # ─────────────────────────────────────────────────────────────
 def get_service():
+    print(" get_service CALLED")
+
     creds = None
 
     # 1. Try loading token from env variable (Railway production)
