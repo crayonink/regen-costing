@@ -1,10 +1,11 @@
 """
-REGEN Burner - Google Sheets Integration (OAuth Version - Render Safe)
+REGEN Burner - Google Sheets Integration (OAuth Version - Railway Safe)
 """
 
 import os
 import json
 import pickle
+import base64
 from datetime import datetime
 
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -25,40 +26,37 @@ SECTIONS = [
 
 
 # ─────────────────────────────────────────────────────────────
-# AUTH (OAuth) — UPDATED
+# AUTH (OAuth) — RAILWAY SAFE
 # ─────────────────────────────────────────────────────────────
 def get_service():
     creds = None
 
-    # Load token if exists
-    if os.path.exists(TOKEN_FILE):
-        with open(TOKEN_FILE, "rb") as token:
-            creds = pickle.load(token)
+    # 1. Try loading token from env variable (Railway production)
+    token_b64 = os.environ.get("TOKEN_PICKLE_B64")
+    if token_b64:
+        try:
+            creds = pickle.loads(base64.b64decode(token_b64))
+            print("✓ Loaded credentials from TOKEN_PICKLE_B64 env var")
+        except Exception as e:
+            print(f"✗ Failed to load TOKEN_PICKLE_B64: {e}")
+            creds = None
 
-    # If no creds → load from ENV instead of file
+    # 2. Fallback to local token.pickle file (local development)
+    if not creds and os.path.exists(TOKEN_FILE):
+        try:
+            with open(TOKEN_FILE, "rb") as token:
+                creds = pickle.load(token)
+            print("✓ Loaded credentials from token.pickle file")
+        except Exception as e:
+            print(f"✗ Failed to load token.pickle: {e}")
+            creds = None
+
+    # 3. No credentials found — raise clear error
     if not creds:
-        creds_json = os.environ.get("OAUTH_CREDENTIALS")
-
-        if not creds_json:
-            raise Exception("OAUTH_CREDENTIALS not set in environment")
-
-        creds_dict = json.loads(creds_json)
-
-        # Write temp credentials file (required by Google library)
-        temp_creds_path = "temp_oauth.json"
-        with open(temp_creds_path, "w") as f:
-            json.dump(creds_dict, f)
-
-        flow = InstalledAppFlow.from_client_secrets_file(
-            temp_creds_path,
-            SCOPES
+        raise Exception(
+            "No valid credentials found. "
+            "Set TOKEN_PICKLE_B64 environment variable in Railway."
         )
-
-        creds = flow.run_console()
-
-        # Save token for reuse
-        with open(TOKEN_FILE, "wb") as token:
-            pickle.dump(creds, token)
 
     return build("sheets", "v4", credentials=creds)
 
@@ -91,15 +89,11 @@ def create_costing_sheet(company_name, project, inputs, summary, items):
     rows.append(["Multiplier", f"{inputs['selling_price_multiplier']}x", "", "Thermocouple", f"Type {inputs['thermocouple_type']}"])
     rows.append([])
 
-    header_row = len(rows) + 1
-
     rows.append([
         "#", "Description", "Size", "Qty",
         "Cost/Unit (Rs.)", "Total Cost (Rs.)",
         "Sell/Unit (Rs.)", "Total Sell (Rs.)", "Section"
     ])
-
-    item_start_row = len(rows) + 1
 
     for i, item in enumerate(items, 1):
         rows.append([
@@ -114,10 +108,7 @@ def create_costing_sheet(company_name, project, inputs, summary, items):
             SECTIONS[item["section"]] if item["section"] < len(SECTIONS) else "",
         ])
 
-    item_end_row = len(rows)
-
     rows.append([])
-
     rows.append(["", "SUBTOTAL", "", "", "", summary["total_cost"], "", summary["total_sell"]])
 
     pipeline = inputs.get("pipeline_cost_extra", 0)
